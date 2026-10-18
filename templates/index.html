@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog de Laura</title>
+    <style>
+        body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #e0f2fe; /* Fondo azul claro, suave y moderno */
+        color: #333;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 20px;}
+/* Nueva regla para centrar el encabezado */
+        .header-container {
+        text-align: center;
+        margin-bottom: 30px;}
+        .header-container h1 {
+        color: #0369a1; /* Azul más oscuro para el título para que resalte bien */
+        margin-bottom: 5px;}
+        .header-container p {
+        color: #0c4a6e; /* Color sutil para el subtítulo */
+        font-size: 16px;
+        margin-top: 0;}
+        h1, h2 { color: #111; }
+        .form-box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07); margin-bottom: 40px; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; font-weight: 700; margin-bottom: 8px; color: #1e293b; }
+        input[type="text"], textarea { width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        input[type="text"]:focus, textarea:focus { outline: 3px solid rgba(14, 165, 233, 0.18); border-color: #0284c7; }
+        textarea { min-height: 240px; resize: vertical; line-height: 1.6; font-family: inherit; }
+        button { background: #0070f3; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; }
+        button:hover { background: #0051cb; }
+        .post-card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .post-title { margin-top: 0; font-size: 22px; }
+        .post-title a { color: #0070f3; text-decoration: none; }
+        .post-title a:hover { text-decoration: underline; }
+        .date { font-size: 13px; color: #777; margin-bottom: 15px; }
+        .snippet { color: #555; line-height: 1.6; }
+        .post-image-preview { display: block; max-width: 100%; max-height: 320px; object-fit: contain; margin: 16px 0; border-radius: 8px; }
+        .main-frame {background: #ffffff;
+            border: 1px solid #e2e8f0; /* Borde gris muy suave */
+            border-radius: 12px;       /* Esquinas redondeadas y modernas */
+            padding: 30px;             /* Espacio interno para que el texto respire */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02); /* Sombra casi invisible */
+            margin-top: 20px; }
+        .header-frame {text-align: center;
+            background: linear-gradient(#ffffff, #ffffff) padding-box,
+                linear-gradient(to bottom, #aa151b 25%, #f1bf00 25% 75%, #aa151b 75%) border-box;
+            border: 12px solid transparent;
+            border-radius: 12px;       /* Esquinas redondeadas */
+            padding: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.01);}
+        .header-frame h1 {color: #0369a1; /* Color azul para el título */
+            margin: 0 0 8px 0;
+            font-size: 40px;}
+        .header-frame p {color: #555;
+            margin: 0;
+            font-size: 15px;}
+        .account-bar { display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin-bottom: 16px; }
+        .account-bar a { color: #0369a1; font-weight: 600; }
+        .account-bar form { margin: 0; }
+        .account-bar button { width: auto; padding: 8px 12px; font-size: 14px; }
+        .message { padding: 12px 16px; margin: 12px 0; border-radius: 4px; background: #fff; }
+        .error { border-left: 4px solid #b42318; }
+        .success { border-left: 4px solid #16803c; }
+        @media (max-width: 700px) {
+            body { padding: 20px 12px; }
+            .form-box { padding: 18px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="account-bar">
+        {% if current_user %}
+            <span>{{ current_user.username }} ({{ 'administrador' if current_user.role == 'admin' else 'invitado' }})</span>
+            {% if current_user.role == 'admin' %}<a href="{{ url_for('manage_users') }}">Usuarios</a>{% endif %}
+            <form action="{{ url_for('logout') }}" method="POST">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <button type="submit">Cerrar sesión</button>
+            </form>
+        {% else %}
+            <a href="{{ url_for('login') }}">Iniciar sesión</a>
+            <a href="{{ url_for('register') }}">Registrarse</a>
+        {% endif %}
+    </div>
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="message {{ category }}">{{ message }}</div>
+    {% endfor %}
+    <!-- Contenedor centrado para el título y bienvenida -->
+    <div class="header-frame">
+        <h1>📝 Blog de Laura</h1>
+        <p>Bienvenidas las personas de bien. Podéis escribir comentarios en mis artículos.</p>
+    </div>
+    <!-- INICIO DEL MARCO SUAVE -->
+    <div class="main-frame">
+    {% if current_user and current_user.role == 'admin' %}
+        <div class="form-box" style="box-shadow: none; border: 1px solid #edf2f7; margin-bottom: 30px;">
+            <h2>Crear nuevo artículo</h2>
+            <form method="POST" action="{{ url_for('create_post') }}" enctype="multipart/form-data">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="title">Título</label>
+                    <input type="text" id="title" name="title" required placeholder="¿Sobre qué vas a escribir hoy?">
+                </div>
+                <div class="form-group">
+                    <label for="content">Contenido</label>
+                    <textarea id="content" name="content" rows="10" required placeholder="Escribe tu historia aquí..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="images">Imágenes (opcional)</label>
+                    <input type="file" id="images" name="images" accept="image/jpeg,image/png,image/gif,image/webp" multiple>
+                    <small>Hasta 5 imágenes JPG, PNG, GIF o WebP; máximo 5 MB cada una.</small>
+                </div>
+                <button type="submit">Publicar artículo</button>
+            </form>
+        </div>
+    {% endif %}
+    <!-- Lista de artículos publicados -->
+        <h2>Artículos publicados</h2>
+        {% for post in posts %}
+            <div class="post-card" style="box-shadow: none; border: 1px solid #edf2f7;">
+                <h3 class="post-title">
+                    <a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>
+                </h3>
+                <div class="date">📅 {{ post.date_posted.strftime('%d/%m/%Y') }} | ✍️ Por: <b>{{ post.author }}</b></div>
+                {% if post.images %}
+                    <img class="post-image-preview" src="{{ url_for('static', filename='uploads/' ~ post.images[0].filename) }}" alt="Imagen de {{ post.title }}">
+                {% endif %}
+                <p class="snippet">{{ post.content[:150] }}{% if post.content|length > 150 %}...{% endif %}</p>
+            </div>
+        {% else %}
+            <p style="text-align: center; color: #777;">No hay artículos todavía. ¡Sé el primero en publicar!</p>
+        {% endfor %}
+    </div>
+    <!-- FIN DEL MARCO SUAVE -->
+</body>
+</html>
