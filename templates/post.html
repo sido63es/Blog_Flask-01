@@ -22,6 +22,8 @@
         .comments { margin-top: 36px; border-top: 1px solid #eee; padding-top: 20px; }
         .comment { padding: 14px 0; border-bottom: 1px solid #eee; }
         .comment p { margin: 6px 0 0; white-space: pre-line; }
+        .comment-delete-form { margin-top: 10px; }
+        .comment-delete-button { height: auto; padding: 6px 10px; font-size: 12px; }
         textarea { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; }
         .comment-form button { background: #0070f3; color: white; border: 0; border-radius: 4px; padding: 10px 16px; cursor: pointer; }
         .message { padding: 12px 16px; margin: 12px 0; background: white; border-left: 4px solid #16803c; }
@@ -55,6 +57,12 @@
                     <strong>{{ comment.user.username }}</strong>
                     <small>{{ comment.date_posted.strftime('%d/%m/%Y a las %H:%M') }}</small>
                     <p>{{ comment.content }}</p>
+                    {% if current_user and current_user.role == 'admin' %}
+                        <form class="comment-delete-form" action="{{ url_for('delete_comment', post_id=post.id, comment_id=comment.id) }}" method="POST" onsubmit="return confirm('¿Seguro que quieres eliminar este comentario?');">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn-delete comment-delete-button">Eliminar comentario</button>
+                        </form>
+                    {% endif %}
                 </article>
             {% else %}
                 <p>Aún no hay comentarios.</p>

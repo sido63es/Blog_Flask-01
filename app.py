@@ -353,6 +353,17 @@ def add_comment(post_id):
     return redirect(url_for('post_detail', post_id=post.id))
 
 
+@app.route('/post/<int:post_id>/comment/<int:comment_id>/delete', methods=['POST'])
+@admin_required
+def delete_comment(post_id, comment_id):
+    post = Post.query.get_or_404(post_id)
+    comment = Comment.query.filter_by(id=comment_id, post_id=post.id).first_or_404()
+    db.session.delete(comment)
+    db.session.commit()
+    flash('Comentario eliminado.', 'success')
+    return redirect(url_for('post_detail', post_id=post.id))
+
+
 @app.route('/post/<int:post_id>/delete', methods=['POST'])
 @admin_required
 def delete_post(post_id):
