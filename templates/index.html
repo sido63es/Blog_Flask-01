@@ -73,6 +73,7 @@
     </style>
 </head>
 <body>
+    {% if not remote_blog %}
     <div class="account-bar">
         {% if current_user %}
             <span>{{ current_user.username }} ({{ 'administrador' if current_user.role == 'admin' else 'invitado' }})</span>
@@ -86,9 +87,13 @@
             <a href="{{ url_for('register') }}">Registrarse</a>
         {% endif %}
     </div>
+    {% endif %}
     {% for category, message in get_flashed_messages(with_categories=true) %}
         <div class="message {{ category }}">{{ message }}</div>
     {% endfor %}
+    {% if remote_blog %}
+        <div class="message">Artículos cargados desde la web publicada (solo lectura).</div>
+    {% endif %}
     <!-- Contenedor centrado para el título y bienvenida -->
     <div class="header-frame">
         <h1>📝 Blog de Laura</h1>
@@ -96,7 +101,7 @@
     </div>
     <!-- INICIO DEL MARCO SUAVE -->
     <div class="main-frame">
-    {% if current_user and current_user.role == 'admin' %}
+    {% if not remote_blog and current_user and current_user.role == 'admin' %}
         <div class="form-box" style="box-shadow: none; border: 1px solid #edf2f7; margin-bottom: 30px;">
             <h2>Crear nuevo artículo</h2>
             <form method="POST" action="{{ url_for('create_post') }}" enctype="multipart/form-data">
@@ -123,16 +128,16 @@
         {% for post in posts %}
             <div class="post-card" style="box-shadow: none; border: 1px solid #edf2f7;">
                 <h3 class="post-title">
-                    <a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>
+                    <a href="{{ post.detail_url if remote_blog else url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>
                 </h3>
-                <div class="date">📅 {{ post.date_posted.strftime('%d/%m/%Y') }} | ✍️ Por: <b>{{ post.author }}</b></div>
+                <div class="date">📅 {{ post.date_display if remote_blog else post.date_posted.strftime('%d/%m/%Y') }} | ✍️ Por: <b>{{ post.author }}</b></div>
                 {% if post.images %}
-                    <img class="post-image-preview" src="{{ url_for('static', filename='uploads/' ~ post.images[0].filename) }}" alt="Imagen de {{ post.title }}">
+                    <img class="post-image-preview" src="{{ post.images[0].url if remote_blog else url_for('static', filename='uploads/' ~ post.images[0].filename) }}" alt="Imagen de {{ post.title }}">
                 {% endif %}
                 <p class="snippet">{{ post.content[:150] }}{% if post.content|length > 150 %}...{% endif %}</p>
             </div>
         {% else %}
-            <p style="text-align: center; color: #777;">No hay artículos todavía. ¡Sé el primero en publicar!</p>
+            <p style="text-align: center; color: #777;">{% if remote_blog %}No hay artículos publicados en la web.{% else %}No hay artículos todavía. ¡Sé el primero en publicar!{% endif %}</p>
         {% endfor %}
     </div>
     <!-- FIN DEL MARCO SUAVE -->

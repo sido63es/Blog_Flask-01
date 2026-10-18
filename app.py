@@ -1,16 +1,21 @@
 import os
 import hmac
+import json
 import secrets
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
 from functools import wraps
+from urllib.request import urlopen
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from dotenv import load_dotenv
+from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.datastructures import FileStorage
 from werkzeug.security import check_password_hash, generate_password_hash
+
+load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
@@ -23,6 +28,7 @@ app.config['MAIL_FROM'] = os.environ.get('MAIL_FROM', '')
 app.config['COMMENT_NOTIFICATION_EMAIL'] = os.environ.get('COMMENT_NOTIFICATION_EMAIL', '')
 app.config['MAX_CONTENT_LENGTH'] = 26 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = os.path.join(app.static_folder, 'uploads')
+app.config['BLOG_API_URL'] = os.environ.get('BLOG_API_URL', '').rstrip('/')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -197,6 +203,21 @@ def inject_template_helpers():
     return {'csrf_token': get_csrf_token, 'current_user': g.current_user}
 
 
+def fetch_remote_posts() -> list[dict[str, object]]:
+    api_url = f"{app.config['BLOG_API_URL']}/api/posts"
+    try:
+        with urlopen(api_url, timeout=5) as response:
+            payload = json.loads(response.read())
+    except (OSError, json.JSONDecodeError):
+        app.logger.exception('No se pudieron cargar los artículos de la web publicada.')
+        abort(502, description='No se pudieron cargar los artículos de la web publicada.')
+
+    if not isinstance(payload, list) or any(not isinstance(post, dict) for post in payload):
+        app.logger.error('La API del blog devolvió una respuesta con formato no válido.')
+        abort(502, description='La API del blog devolvió una respuesta con formato no válido.')
+    return payload
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -221,8 +242,40 @@ def admin_required(view):
 
 @app.route('/')
 def home():
+    remote_blog = bool(app.config['BLOG_API_URL'])
+    posts = (
+        fetch_remote_posts()
+        if remote_blog
+        else Post.query.order_by(Post.date_posted.desc()).all()
+    )
+    return render_template('index.html', posts=posts, remote_blog=remote_blog)
+
+
+@app.route('/api/posts')
+def api_posts():
     posts = Post.query.order_by(Post.date_posted.desc()).all()
-    return render_template('index.html', posts=posts)
+    return jsonify([
+        {
+            'id': post.id,
+            'title': post.title,
+            'content': post.content,
+            'date_display': post.date_posted.strftime('%d/%m/%Y'),
+            'author': post.author,
+            'detail_url': url_for('post_detail', post_id=post.id, _external=True),
+            'images': [
+                {
+                    'filename': image.filename,
+                    'url': url_for(
+                        'static',
+                        filename=f'uploads/{image.filename}',
+                        _external=True,
+                    ),
+                }
+                for image in post.images
+            ],
+        }
+        for post in posts
+    ])
 
 
 @app.route('/register', methods=['GET', 'POST'])
