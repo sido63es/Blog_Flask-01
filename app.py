@@ -6,10 +6,11 @@ import smtplib
 from datetime import datetime
 from email.message import EmailMessage
 from functools import wraps
+from xml.etree.ElementTree import Element, SubElement, tostring
 from urllib.request import urlopen
 
 from dotenv import load_dotenv
-from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.datastructures import FileStorage
@@ -29,6 +30,10 @@ app.config['COMMENT_NOTIFICATION_EMAIL'] = os.environ.get('COMMENT_NOTIFICATION_
 app.config['MAX_CONTENT_LENGTH'] = 26 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = os.path.join(app.static_folder, 'uploads')
 app.config['BLOG_API_URL'] = os.environ.get('BLOG_API_URL', '').rstrip('/')
+app.config['SEO_SITE_URL'] = os.environ.get(
+    'SEO_SITE_URL',
+    'https://laurablog.eu.pythonanywhere.com',
+).rstrip('/')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -200,7 +205,11 @@ def load_user_and_check_csrf():
 
 @app.context_processor
 def inject_template_helpers():
-    return {'csrf_token': get_csrf_token, 'current_user': g.current_user}
+    return {
+        'csrf_token': get_csrf_token,
+        'current_user': g.current_user,
+        'seo_site_url': app.config['SEO_SITE_URL'],
+    }
 
 
 def fetch_remote_posts() -> list[dict[str, object]]:
@@ -249,6 +258,36 @@ def home():
         else Post.query.order_by(Post.date_posted.desc()).all()
     )
     return render_template('index.html', posts=posts, remote_blog=remote_blog)
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    return Response(
+        f'User-agent: *\nAllow: /\nSitemap: {app.config["SEO_SITE_URL"]}/sitemap.xml\n',
+        mimetype='text/plain',
+    )
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    namespace = 'http://www.sitemaps.org/schemas/sitemap/0.9'
+    urlset = Element('urlset', xmlns=namespace)
+    site_url = app.config['SEO_SITE_URL']
+
+    home_url = SubElement(urlset, f'{{{namespace}}}url')
+    SubElement(home_url, f'{{{namespace}}}loc').text = f'{site_url}/'
+
+    for post in Post.query.order_by(Post.date_posted.desc()).all():
+        post_url = SubElement(urlset, f'{{{namespace}}}url')
+        SubElement(post_url, f'{{{namespace}}}loc').text = (
+            f'{site_url}{url_for("post_detail", post_id=post.id)}'
+        )
+        SubElement(post_url, f'{{{namespace}}}lastmod').text = (
+            post.date_posted.date().isoformat()
+        )
+
+    sitemap = tostring(urlset, encoding='utf-8', xml_declaration=True)
+    return Response(sitemap, mimetype='application/xml')
 
 
 @app.route('/api/posts')
