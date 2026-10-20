@@ -127,6 +127,36 @@ def send_comment_notification(post: Post, comment: Comment) -> None:
         smtp.send_message(message)
 
 
+def send_appointment_notification(post: Post, appointment: TarotAppointment) -> None:
+    config = app.config
+    required = ('SMTP_HOST', 'MAIL_FROM', 'COMMENT_NOTIFICATION_EMAIL')
+    missing = [key for key in required if not config[key]]
+    if missing:
+        raise RuntimeError(f"Falta configurar: {', '.join(missing)}")
+    if bool(config['SMTP_USERNAME']) != bool(config['SMTP_PASSWORD']):
+        raise RuntimeError('SMTP_USERNAME y SMTP_PASSWORD deben configurarse juntos.')
+
+    message = EmailMessage()
+    message['Subject'] = 'Nueva cita de Tarot reservada'
+    message['From'] = config['MAIL_FROM']
+    message['To'] = config['COMMENT_NOTIFICATION_EMAIL']
+    message.set_content(
+        f"Se ha reservado una nueva cita de Tarot.\n\n"
+        f"Artículo: {post.title}\n"
+        f"Nombre: {appointment.name}\n"
+        f"Correo: {appointment.email}\n"
+        f"Fecha: {appointment.appointment_at.strftime('%d/%m/%Y a las %H:%M')}\n"
+    )
+
+    smtp_class = smtplib.SMTP_SSL if config['SMTP_USE_SSL'] else smtplib.SMTP
+    with smtp_class(config['SMTP_HOST'], config['SMTP_PORT'], timeout=10) as smtp:
+        if not config['SMTP_USE_SSL']:
+            smtp.starttls()
+        if config['SMTP_USERNAME']:
+            smtp.login(config['SMTP_USERNAME'], config['SMTP_PASSWORD'])
+        smtp.send_message(message)
+
+
 def validate_image_uploads(files: list[FileStorage]) -> tuple[list[tuple[FileStorage, str]], str | None]:
     uploads = [file for file in files if file and file.filename]
     if len(uploads) > MAX_IMAGES_PER_UPLOAD:
@@ -499,7 +529,20 @@ def book_tarot_appointment(post_id):
             db.session.rollback()
             flash('Esa hora ya está reservada. Elige otra, por favor.', 'error')
         else:
-            flash('Tu cita de Tarot ha quedado reservada. ¡Gracias!', 'success')
+            try:
+                send_appointment_notification(post, appointment)
+            except (OSError, RuntimeError, smtplib.SMTPException, ValueError):
+                app.logger.exception('No se pudo enviar el aviso de nueva cita de Tarot.')
+                flash(
+                    'Cita reservada, pero no se pudo enviar el correo de aviso.',
+                    'warning',
+                )
+            else:
+                flash(
+                    'Tu cita de Tarot ha quedado reservada y se ha enviado el aviso por correo. '
+                    '¡Gracias!',
+                    'success',
+                )
     return redirect(url_for('post_detail', post_id=post.id))
 
 
