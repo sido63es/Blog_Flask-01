@@ -3,11 +3,13 @@ import hmac
 import json
 import secrets
 import smtplib
-from datetime import datetime
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from functools import wraps
+from sqlalchemy.exc import IntegrityError
 from xml.etree.ElementTree import Element, SubElement, tostring
 from urllib.request import urlopen
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from flask import Flask, Response, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
@@ -38,6 +40,7 @@ app.config['SEO_SITE_URL'] = os.environ.get(
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///blog.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+APPOINTMENT_TIMEZONE = ZoneInfo('Europe/Madrid')
 
 ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
 MAX_IMAGE_SIZE = 5 * 1024 * 1024
@@ -51,6 +54,11 @@ class Post(db.Model):
     date_posted = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     author = db.Column(db.String(50), nullable=False, default="Anónimo")
     comments = db.relationship('Comment', backref='post', cascade='all, delete-orphan')
+    appointments = db.relationship(
+        'TarotAppointment',
+        backref='post',
+        cascade='all, delete-orphan',
+    )
     images = db.relationship(
         'PostImage',
         backref='post',
@@ -79,6 +87,14 @@ class Comment(db.Model):
     date_posted = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+
+class TarotAppointment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    appointment_at = db.Column(db.DateTime, nullable=False, unique=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
 
 
 def send_comment_notification(post: Post, comment: Comment) -> None:
@@ -416,7 +432,75 @@ def create_post():
 @app.route('/post/<int:post_id>')
 def post_detail(post_id):
     post = Post.query.get_or_404(post_id)
-    return render_template('post.html', post=post)
+    is_tarot_post = 'tarot' in post.title.casefold()
+    now = datetime.now(APPOINTMENT_TIMEZONE).replace(tzinfo=None)
+    booked_slots = []
+    if is_tarot_post:
+        booked_slots = [
+            appointment.appointment_at.strftime('%Y-%m-%dT%H:%M')
+            for appointment in TarotAppointment.query.filter(
+                TarotAppointment.appointment_at >= now
+            ).order_by(TarotAppointment.appointment_at)
+        ]
+    return render_template(
+        'post.html',
+        post=post,
+        is_tarot_post=is_tarot_post,
+        booked_slots=booked_slots,
+        min_appointment_at=now.strftime('%Y-%m-%dT%H:%M'),
+    )
+
+
+@app.route('/post/<int:post_id>/appointment', methods=['POST'])
+def book_tarot_appointment(post_id):
+    post = Post.query.get_or_404(post_id)
+    if 'tarot' not in post.title.casefold():
+        abort(404)
+
+    name = request.form.get('name', '').strip()
+    email = request.form.get('email', '').strip()
+    appointment_value = request.form.get('appointment_at', '')
+    try:
+        appointment_at = datetime.strptime(appointment_value, '%Y-%m-%dT%H:%M')
+    except ValueError:
+        appointment_at = None
+
+    now = datetime.now(APPOINTMENT_TIMEZONE).replace(tzinfo=None)
+    if not name or len(name) > 100:
+        flash('Indica un nombre de hasta 100 caracteres.', 'error')
+    elif (
+        not email
+        or len(email) > 254
+        or '@' not in email
+        or any(character.isspace() for character in email)
+    ):
+        flash('Indica una dirección de correo válida.', 'error')
+    elif appointment_at is None or appointment_at <= now:
+        flash('Selecciona una fecha y hora futuras.', 'error')
+    elif (
+        appointment_at.replace(tzinfo=APPOINTMENT_TIMEZONE)
+        .astimezone(timezone.utc)
+        .astimezone(APPOINTMENT_TIMEZONE)
+        .replace(tzinfo=None)
+        != appointment_at
+    ):
+        flash('La hora seleccionada no existe por el cambio horario. Elige otra.', 'error')
+    else:
+        appointment = TarotAppointment(
+            name=name,
+            email=email,
+            appointment_at=appointment_at,
+            post_id=post.id,
+        )
+        db.session.add(appointment)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            flash('Esa hora ya está reservada. Elige otra, por favor.', 'error')
+        else:
+            flash('Tu cita de Tarot ha quedado reservada. ¡Gracias!', 'success')
+    return redirect(url_for('post_detail', post_id=post.id))
 
 
 @app.route('/post/<int:post_id>/comment', methods=['POST'])
@@ -523,6 +607,25 @@ def edit_post(post_id):
 def manage_users():
     users = User.query.order_by(User.username).all()
     return render_template('users.html', users=users)
+
+
+@app.route('/appointments')
+@admin_required
+def manage_appointments():
+    appointments = TarotAppointment.query.order_by(
+        TarotAppointment.appointment_at.desc()
+    ).all()
+    return render_template('appointments.html', appointments=appointments)
+
+
+@app.route('/appointments/<int:appointment_id>/delete', methods=['POST'])
+@admin_required
+def delete_appointment(appointment_id):
+    appointment = TarotAppointment.query.get_or_404(appointment_id)
+    db.session.delete(appointment)
+    db.session.commit()
+    flash('Cita cancelada. El horario vuelve a estar disponible.', 'success')
+    return redirect(url_for('manage_appointments'))
 
 
 @app.route('/users/<int:user_id>/role', methods=['POST'])

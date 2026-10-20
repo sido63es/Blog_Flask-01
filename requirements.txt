@@ -2,3 +2,4 @@ flask
 flask_sqlalchemy
 werkzeug
 python-dotenv
+tzdata

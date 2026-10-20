@@ -80,7 +80,10 @@
     <div class="account-bar">
         {% if current_user %}
             <span>{{ current_user.username }} ({{ 'administrador' if current_user.role == 'admin' else 'invitado' }})</span>
-            {% if current_user.role == 'admin' %}<a href="{{ url_for('manage_users') }}">Usuarios</a>{% endif %}
+            {% if current_user.role == 'admin' %}
+                <a href="{{ url_for('manage_appointments') }}">Citas</a>
+                <a href="{{ url_for('manage_users') }}">Usuarios</a>
+            {% endif %}
             <form action="{{ url_for('logout') }}" method="POST">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <button type="submit">Cerrar sesión</button>

@@ -22,6 +22,12 @@
         .btn-delete { background: #ff3b30; color: white; border: none; cursor: pointer; padding-left: 12px; padding-right: 12px; }
         .btn-delete:hover { background: #d32f2f; }
         .comments { margin-top: 36px; border-top: 1px solid #eee; padding-top: 20px; }
+        .appointment-section { margin-top: 36px; border-top: 1px solid #eee; padding-top: 20px; }
+        .appointment-form { max-width: 520px; }
+        .appointment-form label { display: block; font-weight: 600; margin: 14px 0 6px; }
+        .appointment-form input { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; }
+        .appointment-form button { margin-top: 16px; background: #0070f3; color: white; border: 0; border-radius: 4px; padding: 10px 16px; cursor: pointer; }
+        .appointment-help { color: #666; font-size: 14px; }
         .comment { padding: 14px 0; border-bottom: 1px solid #eee; }
         .comment p { margin: 6px 0 0; white-space: pre-line; }
         .comment-delete-form { margin-top: 10px; }
@@ -51,6 +57,49 @@
                     <img src="{{ url_for('static', filename='uploads/' ~ image.filename) }}" alt="Imagen {{ loop.index }} de {{ post.title }}">
                 {% endfor %}
             </div>
+        {% endif %}
+        {% if is_tarot_post %}
+            <section class="appointment-section">
+                <h2>Reserva tu cita de Tarot</h2>
+                <p>Elige una fecha y hora futuras. Cada horario admite una sola cita.</p>
+                <form
+                    class="appointment-form"
+                    id="appointment-form"
+                    action="{{ url_for('book_tarot_appointment', post_id=post.id) }}"
+                    method="POST"
+                    data-booked-slots='{{ booked_slots|tojson }}'
+                >
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <label for="appointment-name">Nombre</label>
+                    <input id="appointment-name" name="name" type="text" required maxlength="100" autocomplete="name">
+                    <label for="appointment-email">Correo electrónico</label>
+                    <input id="appointment-email" name="email" type="email" required maxlength="254" autocomplete="email">
+                    <label for="appointment-at">Día y hora</label>
+                    <input
+                        id="appointment-at"
+                        name="appointment_at"
+                        type="datetime-local"
+                        min="{{ min_appointment_at }}"
+                        required
+                    >
+                    <p class="appointment-help" id="appointment-help">
+                        Los horarios ya reservados no se pueden seleccionar.
+                    </p>
+                    <button type="submit">Solicitar cita</button>
+                </form>
+                <script>
+                    const appointmentForm = document.getElementById('appointment-form');
+                    const appointmentInput = document.getElementById('appointment-at');
+                    const bookedSlots = JSON.parse(appointmentForm.dataset.bookedSlots);
+                    appointmentInput.addEventListener('input', () => {
+                        appointmentInput.setCustomValidity(
+                            bookedSlots.includes(appointmentInput.value)
+                                ? 'Esa hora ya está reservada. Elige otra.'
+                                : ''
+                        );
+                    });
+                </script>
+            </section>
         {% endif %}
         <section class="comments">
             <h2>Comentarios ({{ post.comments|length }})</h2>
