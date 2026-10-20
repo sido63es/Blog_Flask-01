@@ -1,0 +1,82 @@
+name: Deploy to PythonAnywhere
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pythonanywhere-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PA_USERNAME: ${{ secrets.PA_USERNAME }}
+      PA_APP_PATH: ${{ secrets.PA_APP_PATH }}
+      PA_WEBAPP_DOMAIN: ${{ secrets.PA_WEBAPP_DOMAIN }}
+      PA_API_TOKEN: ${{ secrets.PA_API_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in PA_USERNAME PA_APP_PATH PA_WEBAPP_DOMAIN PA_API_TOKEN; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error title=Missing GitHub secret::$name is required for deployment."
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+          if [[ ! "$PA_USERNAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
+            echo "::error title=Invalid configuration::PA_USERNAME has an unsupported format."
+            exit 1
+          fi
+          if [[ ! "$PA_APP_PATH" =~ ^/home/[A-Za-z0-9._/-]+$ ]]; then
+            echo "::error title=Invalid configuration::PA_APP_PATH must be an absolute path under /home without spaces."
+            exit 1
+          fi
+          if [[ ! "$PA_WEBAPP_DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "::error title=Invalid configuration::PA_WEBAPP_DOMAIN must be a domain name."
+            exit 1
+          fi
+
+      - name: Upload project files to PythonAnywhere
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_base="https://eu.pythonanywhere.com/api/v0/user/$PA_USERNAME"
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              .github/*|.vscode/*) continue ;;
+            esac
+            target_path="${PA_APP_PATH%/}/$file"
+            encoded_path="$(python3 -c 'import sys; from urllib.parse import quote; print(quote(sys.argv[1], safe="/"))' "$target_path")"
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              --header "Authorization: Token $PA_API_TOKEN" \
+              --form "content=@$file" \
+              "$api_base/files/path$encoded_path"
+          done < <(git ls-files -z)
+
+      - name: Reload PythonAnywhere web app
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Token $PA_API_TOKEN" \
+            "https://eu.pythonanywhere.com/api/v0/user/$PA_USERNAME/webapps/$PA_WEBAPP_DOMAIN/reload/"
